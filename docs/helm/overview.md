@@ -104,7 +104,7 @@ Deploys separate frontend and backend containers with individual services.
 - 2 Services (frontend, backend)
 - 1 Ingress with path-based routing
 
-**📖 See [MULTI_CONTAINER_SETUP.md](./MULTI_CONTAINER_SETUP.md) for detailed documentation.**
+**📖 See [Multi-Container Setup](./multi-container-setup) for detailed documentation.**
 
 ## Configuration
 
@@ -397,14 +397,14 @@ git push
 
 ## Documentation
 
-- [Multi-Container Setup Guide](./MULTI_CONTAINER_SETUP.md)
-- [CI/CD Workflows](../ci-cd/CI_WORKFLOWS.md)
-- [ArgoCD Setup](../argocd/ARGOCD_SETUP.md)
+- [Multi-Container Setup Guide](./multi-container-setup)
+- [CI/CD Workflows](../ci-cd/workflows)
+- [ArgoCD Setup](../argocd/setup)
 
 ## Support
 
 For issues or questions:
-1. Check the [Multi-Container Setup Guide](./MULTI_CONTAINER_SETUP.md)
+1. Check the [Multi-Container Setup Guide](./multi-container-setup)
 2. Review tenant examples in `aimsgo-argocd-apps/helm-template/tenants/` directory
 3. Contact the DevOps team
 

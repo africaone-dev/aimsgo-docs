@@ -341,11 +341,11 @@ kubectl describe pod <pod-name> -n my-tenant
 
 ### Documentation
 
-- [Helm Template Guide](./helm/README.md)
-- [Multi-Container Setup](./helm/MULTI_CONTAINER_SETUP.md)
-- [CI/CD Workflows](./ci-cd/CI_WORKFLOWS.md)
-- [ArgoCD Setup](./argocd/ARGOCD_SETUP.md)
-- [AIMS-Core Deployment](./argocd/AIMS_CORE_APPLICATION.md)
+- [Helm Template Guide](../helm/overview)
+- [Multi-Container Setup](../helm/multi-container-setup)
+- [CI/CD Workflows](../ci-cd/workflows)
+- [ArgoCD Setup](../argocd/setup)
+- [AIMS-Core Deployment](../argocd/aims-core-application)
 
 ### External References
 
