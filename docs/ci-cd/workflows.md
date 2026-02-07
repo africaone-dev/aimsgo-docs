@@ -78,15 +78,6 @@ For **aims-core**, use `helm_chart_path: helm-aims-core` and the corresponding i
 | `GH_TOKEN` | `${{ secrets.GITHUB_TOKEN }}` | GHCR write access (auto-provided) |
 | `AIMSGO_ARGOCD_APPS_TOKEN` | PAT | Write access to `aimsgo-argocd-apps` repo |
 
-## Container Images
-
-| Project | Component | Image |
-|---|---|---|
-| aims | Frontend | `ghcr.io/africaone-dev/aims-frontend` |
-| aims | Backend | `ghcr.io/africaone-dev/aims-backend` |
-| aims-core | Frontend | `ghcr.io/africaone-dev/aims-core-frontend` |
-| aims-core | Backend | `ghcr.io/africaone-dev/aims-core-backend` |
-
 ## Image Retention
 
 The workflow automatically cleans up old container images from GHCR. Default: **keep last 10 versions** per package. Set `retention_keep: 0` to disable cleanup.
