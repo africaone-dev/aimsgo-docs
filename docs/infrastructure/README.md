@@ -2,16 +2,11 @@
 
 ## Database
 
-- [PGO Setup Guide](database/pgo-setup.md) - Production PostgreSQL with Crunchy Data PGO
-- [PostgreSQL Solutions Comparison](database/postgresql-comparison.md) - Initial analysis of PostgreSQL options
-- [PGO vs Bitnami Detailed Comparison](database/pgo-comparison.md) - Why we chose PGO
-- [Bitnami PostgreSQL Setup](database/postgresql-bitnami-setup.md) - Alternative simple setup (archived)
-
-## CI/CD
-
-- [Versioning Strategy](ci-cd/versioning-strategy.md) - Docker image versioning for multi-container deployments
+- [PGO Deployment Guide](database/pgo-setup.md) — PostgreSQL with Crunchy Data PGO (step-by-step)
+- [Managing PGO via Terraform](database/terraform-pgo-usage.md) — Terraform state, targeted plans, safe commands
 
 ## Related Documentation
 
-- [ArgoCD Setup](../argocd/setup) - Application deployment configuration
-- [Helm Charts](../helm/overview) - Kubernetes deployment templates
+- [ArgoCD Setup](../argocd/setup) — Application deployment configuration
+- [Helm Charts](../helm/overview) — Kubernetes deployment templates
+- [CI/CD Workflows](../ci-cd/workflows) — Unified build pipeline

@@ -1,80 +1,72 @@
-# Управление PostgreSQL через Terraform
+# Managing PostgreSQL via Terraform
 
-## ✅ Текущий статус
+## Current Status
 
-PGO (Crunchy Data PostgreSQL Operator) и PostgresCluster **импортированы в Terraform state**.
+PGO (Crunchy Data PostgreSQL Operator) and PostgresCluster are **imported into Terraform state**.
 
-**Импортированные ресурсы:**
-- `module.cluster-bootstrap.helm_release.pgo` - PGO Operator (namespace: postgres-operator)
-- `module.cluster-bootstrap.kubectl_manifest.aimsgo_postgres_cluster` - PostgreSQL кластер (namespace: database)
+**Imported resources:**
+- `module.cluster-bootstrap.helm_release.pgo` — PGO Operator (namespace: `postgres-operator`)
+- `module.cluster-bootstrap.kubectl_manifest.aimsgo_postgres_cluster` — PostgreSQL cluster (namespace: `database`)
 
-## 🚀 Применение через Terraform
+## Applying Changes
 
-### 1. Установка PGO Operator (уже установлен)
+### PGO Operator (already installed)
 
 ```bash
-cd /Users/dmitriimashkov/PycharmProjects/africaone-dev/terraform-hcloud-kube-hetzner/aimsgo
+cd /path/to/terraform-hcloud-kube-hetzner/aimsgo
 
-# Operator уже установлен через helm, импортирован в Terraform
+# Verify state
 terraform state show module.cluster-bootstrap.helm_release.pgo
 ```
 
-### 2. Применение PostgreSQL кластера
+### PostgreSQL Cluster
 
 ```bash
-# Plan (показать изменения)
+# Plan
 terraform plan -target=module.cluster-bootstrap.kubectl_manifest.aimsgo_postgres_cluster
 
-# Apply (применить изменения)
+# Apply
 terraform apply -target=module.cluster-bootstrap.kubectl_manifest.aimsgo_postgres_cluster
-
-# Или apply всего cluster-bootstrap модуля (требует добавить все targets из-за moved resources)
-# НЕ РЕКОМЕНДУЕТСЯ из-за конфликтов с null_resource -> terraform_data миграцией
 ```
 
-### 3. Проверка статуса
+### Verify Status
 
 ```bash
-# PostgreSQL кластер
 kubectl get postgrescluster -n database
 kubectl get pods -n database
-
-# PGO Operator
 kubectl get pods -n postgres-operator
 
-# Получить пароль БД
+# Get DB password
 kubectl get secret aimsgo-db-pguser-aimsgo -n database \
   -o jsonpath='{.data.password}' | base64 -d
 ```
 
-## 📝 Редактирование конфигурации
+## Editing Configuration
 
-Для изменения PostgreSQL кластера:
+To modify the PostgreSQL cluster, edit `cluster-bootstrap/pgo.tf` and apply:
 
-1. Отредактируйте `cluster-bootstrap/pgo.tf` (ресурс `kubectl_manifest.aimsgo_postgres_cluster`)
-2. Примените изменения:
-   ```bash
-   terraform apply -target=module.cluster-bootstrap.kubectl_manifest.aimsgo_postgres_cluster
-   ```
+```bash
+terraform apply -target=module.cluster-bootstrap.kubectl_manifest.aimsgo_postgres_cluster
+```
 
-### Примеры изменений:
+### Common Changes
 
-**Масштабирование до 3 реплик (HA):**
+**Scale to 3 replicas (HA):**
 ```hcl
 instances:
   - name: instance1
-    replicas: 3  # Было: 1
+    replicas: 3
 ```
 
-**Изменение размера диска:**
+**Increase disk size:**
 ```hcl
 dataVolumeClaimSpec:
   resources:
     requests:
-      storage: 50Gi  # Было: 20Gi
+      storage: 50Gi
 ```
 
-**Добавление нового пользователя:**
+**Add a new database user:**
 ```hcl
 users:
   - name: aimsgo
@@ -86,84 +78,71 @@ users:
       - aimsgo_core
 ```
 
-## ⚠️ Важные замечания
+## ⚠️ Targeted Plan Caveats
 
-### Проблема с targeted plan
+Terraform in this project has a known issue with `null_resource` → `terraform_data` migration in the kube-hetzner module.
 
-Terraform в этом проекте имеет issue с `null_resource` → `terraform_data` миграцией.
-
-**Симптом:** При выполнении `terraform plan -target=...` требует добавить множество targets для kube-hetzner модуля.
-
-**Решение:**
-- Используйте targeted apply **только** для cluster-bootstrap ресурсов
-- Избегайте `terraform apply` без targets (может пересоздать kubeconfig и другие ресурсы)
-
-### Безопасные команды:
+### Safe commands:
 
 ```bash
-# ✅ Безопасно - изменяет только PostgreSQL кластер
+# ✅ Safe — only affects PostgreSQL cluster
 terraform apply -target=module.cluster-bootstrap.kubectl_manifest.aimsgo_postgres_cluster
 
-# ✅ Безопасно - изменяет только PGO operator
+# ✅ Safe — only affects PGO operator
 terraform apply -target=module.cluster-bootstrap.helm_release.pgo
 
-# ⚠️ ОСТОРОЖНО - может затронуть kube-hetzner ресурсы
+# ⚠️ Caution — may affect kube-hetzner resources
 terraform apply -target=module.cluster-bootstrap
 
-# ❌ НЕ ДЕЛАТЬ - пересоздаст kubeconfig, kustomization и другие ресурсы
+# ❌ Do NOT run — may recreate kubeconfig and other resources
 terraform apply
 ```
 
-## 🔄 Альтернатива: kubectl apply
+## Alternative: kubectl apply
 
-Если targeted terraform apply не работает, можно применять через kubectl:
+If targeted terraform apply fails, apply directly via kubectl:
 
 ```bash
-# Извлечь YAML из Terraform
+# Extract YAML from Terraform
 cd cluster-bootstrap
 grep -A 100 "yaml_body" pgo.tf | sed '1d;$d' > /tmp/postgres-cluster.yaml
 
-# Применить
+# Apply
 kubectl apply -f /tmp/postgres-cluster.yaml
-```
 
-**После применения через kubectl:**
-```bash
-# Синхронизировать state с реальным состоянием
+# Sync state
 terraform refresh -target=module.cluster-bootstrap.kubectl_manifest.aimsgo_postgres_cluster
 ```
 
-## 📊 Подключение к БД
+## Connection Strings
 
-**Connection string через PgBouncer (рекомендуется):**
+**Via PgBouncer (recommended):**
 ```
 Host: aimsgo-db-pgbouncer.database.svc.cluster.local
 Port: 5432
 Database: aimsgo_core
 User: aimsgo
-Password: <из секрета>
 ```
 
-**Connection string напрямую к primary (для админских задач):**
+**Direct to Primary (admin tasks):**
 ```
 Host: aimsgo-db-primary.database.svc.cluster.local
 Port: 5432
 Database: aimsgo_core
 User: aimsgo
-Password: <из секрета>
 ```
 
-## 🗑️ Удаление
+## Deletion
 
 ```bash
-# Удалить PostgreSQL кластер (ОСТОРОЖНО!)
+# Delete PostgreSQL cluster (CAUTION!)
 terraform destroy -target=module.cluster-bootstrap.kubectl_manifest.aimsgo_postgres_cluster
 
-# Удалить PGO Operator (удалит ВСЕ PostgreSQL кластеры!)
+# Delete PGO Operator (deletes ALL PostgreSQL clusters!)
 terraform destroy -target=module.cluster-bootstrap.helm_release.pgo
 ```
 
-## 📚 Документация
+## References
 
 - [PGO Documentation](https://access.crunchydata.com/documentation/postgres-operator/latest/)
 - [PostgresCluster CRD Reference](https://access.crunchydata.com/documentation/postgres-operator/latest/references/crd/)
