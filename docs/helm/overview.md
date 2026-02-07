@@ -1,259 +1,136 @@
 ---
 sidebar_position: 1
 id: overview
-title: Helm Template Overview
+title: Helm Charts Overview
 ---
 
-# Helm Template for AIMSGO Applications
+# Helm Charts
 
-This Helm chart provides a flexible template for deploying both single-container and multi-container applications in the AIMSGO ecosystem.
+The platform uses two Helm charts in the [`aimsgo-argocd-apps`](https://github.com/africaone-dev/aimsgo-argocd-apps) repository:
 
-## Features
+| Chart | Purpose | Deployed as |
+|---|---|---|
+| `helm-aims-core` | Core platform (marketing site, auth, admin API) | Single ArgoCD Application → `aims-core` namespace |
+| `helm-template` | Tenant app (school dashboard) | ApplicationSet → one Application per tenant |
 
-- ✅ **Single-container deployments** (e.g., aimsgo)
-- ✅ **Multi-container deployments** (e.g., aims with frontend + backend)
-- ✅ **Flexible ingress routing** with path-based routing
-- ✅ **Traefik middleware support** (admin path exclusion, redirects)
-- ✅ **Horizontal Pod Autoscaling** (optional)
-- ✅ **Custom resource limits and requests**
-- ✅ **Health checks** (liveness and readiness probes)
+Both charts share the same template structure (frontend + backend deployments, services, ingress, middleware).
 
-## Quick Start
+## Repository Structure
 
-Applications are deployed using **GitOps** with ArgoCD. ArgoCD itself is managed via Terraform using `helm_release`.
-
-### Prerequisites
-
-1. Terraform-managed Kubernetes cluster with ArgoCD installed
-2. Access to the ArgoCD UI or CLI
-3. Git repository with application manifests
-
-### Deploy Single-Container Application (aimsgo)
-
-Create a tenant values file and commit to git:
-
-```bash
-# Create tenant directory
-mkdir -p helm-template/tenants/my-tenant
-
-# Create values.yaml
-cat > helm-template/tenants/my-tenant/values.yaml <<EOF
-deploymentMode: "single"
-image:
-  repository: ghcr.io/africaone-dev/aimsgo
-  tag: "latest"
-ingress:
-  enabled: true
-  hosts:
-    - host: my-tenant.aimsgo.com
-      paths:
-        - path: /
-          pathType: Prefix
-EOF
-
-# Commit and push
-git add helm-template/tenants/my-tenant/
-git commit -m "Add my-tenant configuration"
-git push
+```
+aimsgo-argocd-apps/
+├── root-app.yaml                    # ArgoCD bootstrap entry point
+├── aims-core.yaml                   # ArgoCD Application for aims-core
+├── apps/                            # App of Apps Helm chart
+│   ├── Chart.yaml
+│   ├── values.yaml
+│   └── templates/
+│       ├── applicationset.yaml      # Auto-discovers tenants
+│       └── aims-core.yaml
+├── helm-aims-core/                  # Core platform chart
+│   ├── Chart.yaml
+│   ├── values.yaml
+│   └── templates/
+│       ├── deployment-multi.yaml
+│       ├── service-multi.yaml
+│       ├── ingress.yaml
+│       ├── secrets.yaml
+│       ├── serviceaccount.yaml
+│       ├── hpa.yaml
+│       └── middleware/
+│           ├── admin-path-exclusion.yaml
+│           └── redirect-dashboard.yaml
+├── helm-template/                   # Tenant chart (shared template)
+│   ├── Chart.yaml
+│   ├── values.yaml
+│   └── templates/                   # Same structure as helm-aims-core
+│   └── tenants/
+│       ├── _TEMPLATE_/values.yaml   # Template for new tenants
+│       └── tenant1/values.yaml      # Active tenant
+└── .github/workflows/
+    └── tenant-management.yml        # Create/delete tenants
 ```
 
-The ApplicationSet will automatically create an ArgoCD Application for your tenant.
+## Resources Created per Tenant
 
-### Deploy Multi-Container Application (aims)
+Each tenant deployment creates:
 
-```bash
-# Use the existing aims-example as a template
-cp -r helm-template/tenants/aims-example helm-template/tenants/my-aims-tenant
+- **2 Deployments**: `{name}-frontend` + `{name}-backend`
+- **2 Services**: frontend (port 3000) + backend (port 8000)
+- **1 Ingress**: path-based routing (`/api`, `/admin` → backend, `/` → frontend)
+- **1 ServiceAccount**
+- **Middleware** (optional): admin path exclusion, dashboard redirect
+- **Secrets**: Django secret key, postgres credentials reference
 
-# Edit the values
-vim helm-template/tenants/my-aims-tenant/values.yaml
+## Tenant Values Configuration
 
-# Commit and push
-git add helm-template/tenants/my-aims-tenant/
-git commit -m "Add aims tenant"
-git push
-```
+Each tenant has a `values.yaml` that overrides chart defaults. See `_TEMPLATE_/values.yaml` for the full template.
 
-## Deployment Modes
-
-### Single Mode (Default)
-
-Deploys a single container application.
-
-**Use Cases:**
-- aims (Next.js + Django)
-- aims-core (Next.js + Django)
-- Applications with separate frontend/backend codebases
-
-**Resources Created:**
-- 1 Deployment
-- 1 Service
-- 1 Ingress (optional)
-
-### Multi Mode
-
-Deploys separate frontend and backend containers with individual services.
-
-**Use Cases:**
-- aims (Next.js frontend + Django backend)
-- aims-core (Next.js frontend + Django backend)
-- Applications with separate frontend/backend codebases
-
-**Resources Created:**
-- 2 Deployments (frontend, backend)
-- 2 Services (frontend, backend)
-- 1 Ingress with path-based routing
-
-**📖 See [Multi-Container Setup](./multi-container-setup) for detailed documentation.**
-
-## Configuration
-
-### Basic Configuration
+Key settings:
 
 ```yaml
-# Deployment mode: "single" or "multi"
-deploymentMode: "single"
-
-# Replica count
-replicaCount: 1
-
-# Image configuration
-image:
-  repository: ghcr.io/africaone-dev/aimsgo
-  pullPolicy: IfNotPresent
-  tag: "latest"
-
-# Service configuration
-service:
-  type: ClusterIP
-  port: 80
-
-# Ingress configuration
-ingress:
-  enabled: true
-  className: "traefik"
-  hosts:
-    - host: example.aimsgo.com
-      paths:
-        - path: /
-          pathType: Prefix
-```
-
-### Multi-Container Configuration
-
-```yaml
-deploymentMode: "multi"
-
 frontend:
   enabled: true
   image:
     repository: ghcr.io/africaone-dev/aims-frontend
-    tag: "latest"
+    tag: ""                              # Set by CI workflow (appVersion)
   port: 3000
-  
+  env:
+    - name: NEXT_PUBLIC_API_BASE_URL
+      value: "http://TENANT-helm-template-backend:8000"
+
 backend:
   enabled: true
   image:
     repository: ghcr.io/africaone-dev/aims-backend
-    tag: "latest"
+    tag: ""
   port: 8000
-```
+  env:
+    - name: DB_HOST
+      value: "aimsgo-db-pgbouncer.database.svc.cluster.local"
+    - name: TENANT_DB_NAME
+      value: "tenant_TENANT"
+    - name: TENANT_SUBDOMAIN
+      value: "TENANT"
 
-## Tenants
-
-Example tenant configurations are available in the `tenants/` directory:
-
-- **aims-example/**: Multi-container deployment with aims frontend + backend
-- **aims-core/**: Multi-container deployment with aims-core frontend + backend
-- **example-school/**: Single-container deployment with aimsgo
-- **root/**: Root tenant configuration
-- **t25/**, **test/**, **test-2/**, **test-5/**: Additional tenant examples
-
-## Ingress Routing
-
-### Single-Container
-
-All traffic routes to the single service:
-
-```yaml
 ingress:
+  enabled: true
+  className: "traefik"
   hosts:
-    - host: example.aimsgo.com
-      paths:
-        - path: /
-          pathType: Prefix
-```
-
-### Multi-Container with Path Routing
-
-Route different paths to different services:
-
-```yaml
-ingress:
-  hosts:
-    - host: aims.aimsgo.com
+    - host: "TENANT.aimsgo.com"
       paths:
         - path: /api
           pathType: Prefix
-          backend:
-            service:
-              name: backend
-              port: 8000
+          backend: { service: { name: backend, port: 8000 } }
         - path: /
           pathType: Prefix
-          backend:
-            service:
-              name: frontend
-              port: 3000
+          backend: { service: { name: frontend, port: 3000 } }
+  tls:
+    - hosts: ["TENANT.aimsgo.com"]
+      secretName: "TENANT-tls"
+
+secrets:
+  postgresCredentials:
+    create: false                       # Replicated by Reflector
+  djangoSecret:
+    create: true
+    key: "generated-by-workflow"
 ```
 
-## CI/CD Integration
+## Image Pull Secrets
 
-CI workflows automatically build and push images to GitHub Container Registry:
-
-### AIMS Project
-- Frontend: `ghcr.io/africaone-dev/aims-frontend`
-- Backend: `ghcr.io/africaone-dev/aims-backend`
-
-### AIMS-Core Project
-- Frontend: `ghcr.io/africaone-dev/aims-core-frontend`
-- Backend: `ghcr.io/africaone-dev/aims-core-backend`
-
-### AIMSGO Project
-- App: `ghcr.io/africaone-dev/aimsgo`
-
-## ArgoCD Integration
-
-### Infrastructure Setup
-
-ArgoCD is deployed via Terraform using `helm_release`:
-
-```hcl
-# terraform-hcloud-kube-hetzner/aimsgo/cluster-bootstrap/argocd.tf
-resource "helm_release" "argocd" {
-  name             = "argocd"
-  repository       = "https://argoproj.github.io/argo-helm"
-  chart            = "argo-cd"
-  namespace        = "argocd"
-  create_namespace = true
-  version          = "5.x.x"
-  
-  values = [
-    file("${path.module}/helm-values/argocd.yaml")
-  ]
-}
-```
-
-### ApplicationSet for Multi-Tenant Deployments
-
-The ApplicationSet automatically discovers and deploys all tenants from the git repository:
+GHCR credentials are managed by [Reflector](https://github.com/emberstack/kubernetes-reflector). A single `ghcr-registry` secret in the `default` namespace is automatically replicated to all tenant namespaces.
 
 ```yaml
-apiVersion: argoproj.io/v1alpha1
-kind: ApplicationSet
-metadata:
-  name: aimsgo-tenants
-  namespace: argocd
+imagePullSecrets:
+  - name: ghcr-registry
+```
+
+## ApplicationSet (Tenant Auto-Discovery)
+
+The ApplicationSet watches `helm-template/tenants/*` for directories (excluding `_TEMPLATE_`) and creates an ArgoCD Application for each:
+
+```yaml
 spec:
   generators:
     - git:
@@ -261,20 +138,16 @@ spec:
         revision: HEAD
         directories:
           - path: helm-template/tenants/*
+          - path: helm-template/tenants/_TEMPLATE_
+            exclude: true
   template:
-    metadata:
-      name: '{{path.basename}}'
     spec:
-      project: default
       source:
-        repoURL: https://github.com/africaone-dev/aimsgo-argocd-apps
-        targetRevision: HEAD
         path: helm-template
         helm:
           valueFiles:
             - 'tenants/{{path.basename}}/values.yaml'
       destination:
-        server: https://kubernetes.default.svc
         namespace: '{{path.basename}}'
       syncPolicy:
         automated:
@@ -284,130 +157,16 @@ spec:
           - CreateNamespace=true
 ```
 
-### How It Works
-
-1. **Terraform** provisions infrastructure and installs ArgoCD
-2. **ApplicationSet** watches the git repository for new tenant directories
-3. **GitOps**: When you push a new tenant configuration, ArgoCD automatically:
-   - Detects the new directory
-   - Creates an Application resource
-   - Deploys the Helm chart with tenant-specific values
-   - Continuously syncs changes from git
-
 ## Testing
 
-### Test Locally with Helm Template
-
-Before committing to git, test your configurations locally:
-
 ```bash
-# Test single-container mode
-cd aimsgo-argocd-apps
-helm template test ./helm-template \
-  --set deploymentMode=single \
-  --set image.tag=latest
-
-# Test multi-container mode
-helm template test ./helm-template \
-  -f helm-template/tenants/aims-example/values.yaml
-
-# Validate syntax
+# Lint chart
 helm lint ./helm-template
+
+# Render templates with tenant values
+helm template test ./helm-template \
+  -f helm-template/tenants/tenant1/values.yaml
+
+# Lint aims-core
+helm lint ./helm-aims-core
 ```
-
-### Test in ArgoCD (Dry Run)
-
-```bash
-# Create application without syncing
-argocd app create test-tenant \
-  --repo https://github.com/africaone-dev/aimsgo-argocd-apps \
-  --path helm-template \
-  --helm-set-file values=helm-template/tenants/my-tenant/values.yaml \
-  --dest-server https://kubernetes.default.svc \
-  --dest-namespace test-tenant \
-  --sync-policy none
-
-# Preview what will be deployed
-argocd app diff test-tenant
-
-# Cleanup
-argocd app delete test-tenant
-```
-
-### Monitor Deployment via ArgoCD
-
-```bash
-# Watch application sync status
-argocd app get my-tenant --watch
-
-# Check sync history
-argocd app history my-tenant
-
-# View application logs
-argocd app logs my-tenant --follow
-```
-
-## Upgrading Tenants
-
-### Via GitOps (Recommended)
-
-Simply update the tenant values file and push to git:
-
-```bash
-# Edit tenant configuration
-vim helm-template/tenants/my-tenant/values.yaml
-
-# Update image tag
-sed -i 's/tag: "1.0.0"/tag: "1.1.0"/' helm-template/tenants/my-tenant/values.yaml
-
-# Commit and push
-git add helm-template/tenants/my-tenant/values.yaml
-git commit -m "Update my-tenant to version 1.1.0"
-git push
-```
-
-ArgoCD will automatically detect the change and sync the application.
-
-### Manual Sync via ArgoCD
-
-```bash
-# Trigger immediate sync
-argocd app sync my-tenant
-
-# Sync specific resource
-argocd app sync my-tenant --resource deployment:my-tenant-frontend
-
-# Hard refresh (bypass cache)
-argocd app sync my-tenant --force
-```
-
-### Rollback
-
-```bash
-# List deployment history
-argocd app history my-tenant
-
-# Rollback to specific revision
-argocd app rollback my-tenant <revision-id>
-
-# Or via git revert
-git revert <commit-hash>
-git push
-```
-
-## Documentation
-
-- [Multi-Container Setup Guide](./multi-container-setup)
-- [CI/CD Workflows](../ci-cd/workflows)
-- [ArgoCD Setup](../argocd/setup)
-
-## Support
-
-For issues or questions:
-1. Check the [Multi-Container Setup Guide](./multi-container-setup)
-2. Review tenant examples in `aimsgo-argocd-apps/helm-template/tenants/` directory
-3. Contact the DevOps team
-
-## License
-
-Copyright © 2024-2026 AfricaOne

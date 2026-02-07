@@ -13,5 +13,5 @@
 
 ## Related Documentation
 
-- [ArgoCD Setup](../argocd/) - Application deployment configuration
-- [Helm Charts](../helm/) - Kubernetes deployment templates
+- [ArgoCD Setup](../argocd/setup) - Application deployment configuration
+- [Helm Charts](../helm/overview) - Kubernetes deployment templates

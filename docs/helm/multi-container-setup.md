@@ -4,268 +4,159 @@ id: multi-container-setup
 title: Multi-Container Setup
 ---
 
-# Multi-Container Deployment Setup for AIMS
+# Multi-Container Deployment
 
-This document explains how to use the Helm template to deploy applications with multiple containers (frontend + backend) like the AIMS project.
+All applications (aims and aims-core) are deployed as **multi-container** setups: separate frontend (Next.js) and backend (Django) containers with their own services.
 
-## Overview
-
-The Helm template now supports two deployment modes:
-
-1. **Single Mode** (default): Deploys a single container (e.g., aimsgo)
-2. **Multi Mode**: Deploys separate frontend and backend containers with separate services
-
-## Directory Structure
+## Template Structure
 
 ```
-helm-template/
-├── templates/
-│   ├── deployment.yaml          # Single-container deployment
-│   ├── deployment-multi.yaml    # Multi-container deployments (frontend + backend)
-│   ├── service.yaml             # Single-container service
-│   ├── service-multi.yaml       # Multi-container services (frontend + backend)
-│   └── ingress.yaml             # Ingress with routing support
-├── tenants/
-│   ├── aims-example/            # Example AIMS tenant with frontend + backend
-│   │   └── values.yaml
-│   └── example-school/          # Example single-container tenant
-│       └── values.yaml
-└── values.yaml                   # Default values
+helm-template/templates/
+├── deployment-multi.yaml   # Frontend + backend Deployments
+├── service-multi.yaml      # Frontend + backend Services
+├── ingress.yaml            # Ingress with path-based routing
+├── secrets.yaml            # Django secret, postgres credentials
+├── serviceaccount.yaml
+├── hpa.yaml                # Optional HPA
+├── _helpers.tpl
+├── NOTES.txt
+├── namespace.yaml
+└── middleware/
+    ├── admin-path-exclusion.yaml   # Block /admin for tenants
+    └── redirect-dashboard.yaml     # Redirect / to /dashboard
 ```
 
-## Configuration
+## Deployments
 
-### Multi-Container Mode (AIMS with Frontend + Backend)
+### Frontend
 
-Set `deploymentMode: "multi"` and enable frontend and/or backend:
+- Image: `ghcr.io/africaone-dev/aims-frontend` (or `aims-core-frontend`)
+- Port: 3000
+- Env: `NEXT_PUBLIC_API_BASE_URL` pointing to backend service
 
-```yaml
-# Set deployment mode to multi-container
-deploymentMode: "multi"
+### Backend
 
-# Frontend configuration
-frontend:
-  enabled: true
-  image:
-    repository: ghcr.io/africaone-dev/aims-frontend
-    pullPolicy: IfNotPresent
-    tag: "latest"
-  port: 3000
-  env:
-    - name: NEXT_PUBLIC_API_URL
-      value: "http://localhost:8000"
-    - name: NODE_ENV
-      value: "production"
-  resources:
-    limits:
-      cpu: 500m
-      memory: 512Mi
-    requests:
-      cpu: 250m
-      memory: 256Mi
-  livenessProbe:
-    httpGet:
-      path: /
-      port: 3000
-    initialDelaySeconds: 30
-    periodSeconds: 10
-  readinessProbe:
-    httpGet:
-      path: /
-      port: 3000
-    initialDelaySeconds: 10
-    periodSeconds: 5
+- Image: `ghcr.io/africaone-dev/aims-backend` (or `aims-core-backend`)
+- Port: 8000
+- Init containers (tenant chart): `create-db`, `migrate-tenant`, `bootstrap-tenant`
+- Init containers (aims-core chart): `migrate`
+- Env: database connection, Django settings, tenant-specific vars
 
-# Backend configuration
-backend:
-  enabled: true
-  image:
-    repository: ghcr.io/africaone-dev/aims-backend
-    pullPolicy: IfNotPresent
-    tag: "latest"
-  port: 8000
-  env:
-    - name: DJANGO_SETTINGS_MODULE
-      value: "backend.settings"
-    - name: DATABASE_URL
-      value: "postgresql://user:password@postgres:5432/aims_db"
-  resources:
-    limits:
-      cpu: 1000m
-      memory: 1Gi
-    requests:
-      cpu: 500m
-      memory: 512Mi
-  livenessProbe:
-    httpGet:
-      path: /health/
-      port: 8000
-    initialDelaySeconds: 30
-    periodSeconds: 10
-  readinessProbe:
-    httpGet:
-      path: /health/
-      port: 8000
-    initialDelaySeconds: 10
-    periodSeconds: 5
-```
+### Init Containers
 
-### Ingress Routing
+The tenant chart (`helm-template`) runs three init containers before the backend starts:
 
-For multi-container deployments, you can route different paths to different services:
+1. **create-db** — creates the tenant database (`tenant_TENANT`) if it doesn't exist
+2. **migrate-tenant** — runs Django migrations against the tenant database
+3. **bootstrap-tenant** — seeds initial data (roles, permissions)
+
+The aims-core chart (`helm-aims-core`) runs a single `migrate` init container.
+
+## Ingress Routing
+
+Path-based routing directs traffic to the correct service:
 
 ```yaml
 ingress:
-  enabled: true
-  className: "traefik"
   hosts:
-    - host: "aims-example.aimsgo.com"
+    - host: "school1.aimsgo.com"
       paths:
-        # Route /api to backend
         - path: /api
           pathType: Prefix
-          backend:
-            service:
-              name: backend
-              port: 8000
-        # Route /admin to backend
+          backend: { service: { name: backend, port: 8000 } }
         - path: /admin
           pathType: Prefix
-          backend:
-            service:
-              name: backend
-              port: 8000
-        # Route everything else to frontend
+          backend: { service: { name: backend, port: 8000 } }
         - path: /
           pathType: Prefix
-          backend:
-            service:
-              name: frontend
-              port: 3000
+          backend: { service: { name: frontend, port: 3000 } }
   tls:
-    - hosts:
-        - "aims-example.aimsgo.com"
-      secretName: "aims-example-tls"
+    - hosts: ["school1.aimsgo.com"]
+      secretName: "school1-tls"
 ```
 
-## Created Resources
+TLS certificates are issued automatically by cert-manager with Let's Encrypt.
 
-### Multi-Container Mode
+## Traefik Middleware
 
-When using multi-container mode, the following resources are created:
+Optional middleware can be enabled per tenant:
 
-1. **Deployments**:
-   - `{release-name}-frontend` - Frontend deployment
-   - `{release-name}-backend` - Backend deployment
+### Admin Path Exclusion
 
-2. **Services**:
-   - `{release-name}-frontend` - Service for frontend (port 3000)
-   - `{release-name}-backend` - Service for backend (port 8000)
+Blocks access to `/admin` for tenant deployments (enabled by default for tenants):
 
-3. **Ingress**:
-   - Single ingress with path-based routing to frontend/backend services
-
-### Single-Container Mode
-
-When using single-container mode (default):
-
-1. **Deployment**: `{release-name}` - Single container deployment
-2. **Service**: `{release-name}` - Single service
-3. **Ingress**: Routes all traffic to the single service
-
-## Testing
-
-### Test Single-Container Mode
-
-```bash
-helm template test-single ./helm-template \
-  --set deploymentMode=single \
-  --set image.tag=latest
+```yaml
+enableAdminPathExclusion: true
 ```
 
-### Test Multi-Container Mode
+### Dashboard Redirect
 
-```bash
-helm template test-multi ./helm-template \
-  -f ./helm-template/tenants/aims-example/values.yaml
+Redirects `/` to `/dashboard`:
+
+```yaml
+enableRedirectDashboard: true
 ```
 
-## Deployment Examples
+## Database Configuration
 
-### Deploy AIMS Tenant
+Each tenant gets its own PostgreSQL database (`tenant_TENANT`), created by the `create-db` init container. Connection goes through PgBouncer:
 
-```bash
-# Using ArgoCD ApplicationSet
-kubectl apply -f apps/applicationset.yaml
-
-# Or manually with Helm
-helm upgrade --install aims-tenant-1 ./helm-template \
-  -f ./helm-template/tenants/aims-example/values.yaml \
-  --namespace tenant-1 \
-  --create-namespace
+```yaml
+backend:
+  env:
+    - name: DB_HOST
+      value: "aimsgo-db-pgbouncer.database.svc.cluster.local"
+    - name: DB_PORT
+      value: "5432"
+    - name: TENANT_DB_NAME
+      value: "tenant_school1"
+    - name: CORE_DB_NAME
+      value: "aimsgo_core"
+    - name: CORE_DB_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: postgres-credentials
+          key: password
 ```
 
-## Image Management
+## Secrets
 
-The CI workflows automatically build and push images:
+Managed via `secrets.yaml` template:
 
-- **aims-frontend**: `ghcr.io/africaone-dev/aims-frontend:latest`
-- **aims-backend**: `ghcr.io/africaone-dev/aims-backend:latest`
-- **aims-core-frontend**: `ghcr.io/africaone-dev/aims-core-frontend:latest`
-- **aims-core-backend**: `ghcr.io/africaone-dev/aims-core-backend:latest`
+| Secret | Source | Description |
+|---|---|---|
+| `postgres-credentials` | Reflector (from `default` ns) | PostgreSQL password |
+| `ghcr-registry` | Reflector (from `default` ns) | GHCR image pull credentials |
+| `{tenant}-django-secret` | Created by tenant-management workflow | Django `SECRET_KEY` |
 
-## Migration Guide
+## Health Checks
 
-### From Single-Container to Multi-Container
+Default probes:
 
-1. Update tenant values file:
-   ```yaml
-   deploymentMode: "multi"
-   
-   frontend:
-     enabled: true
-     image:
-       repository: ghcr.io/africaone-dev/aims-frontend
-       tag: "latest"
-     # ... frontend config
-   
-   backend:
-     enabled: true
-     image:
-       repository: ghcr.io/africaone-dev/aims-backend
-       tag: "latest"
-     # ... backend config
-   ```
+```yaml
+# Frontend
+livenessProbe:
+  httpGet: { path: /, port: 3000 }
+readinessProbe:
+  httpGet: { path: /, port: 3000 }
 
-2. Update ingress paths to route to correct services
+# Backend
+livenessProbe:
+  httpGet: { path: /health/, port: 8000 }
+  initialDelaySeconds: 30
+readinessProbe:
+  httpGet: { path: /health/, port: 8000 }
+  initialDelaySeconds: 10
+```
 
-3. Deploy the updated configuration
+## aims-core Differences
 
-## Troubleshooting
+The `helm-aims-core` chart is nearly identical to `helm-template` but has:
 
-### Services Not Created
+- Different chart name prefix (`helm-aims-core` vs `helm-template`)
+- Single `migrate` init container (vs three for tenants)
+- Additional env vars: `GITHUB_TOKEN`, `GITHUB_REPO`, `RESEND_API_KEY`, `ADMIN_API_KEY`
+- No admin path exclusion or dashboard redirect by default
+- Ingress on `aimsgo.com` (not a subdomain)
 
-Ensure `deploymentMode: "multi"` and `frontend.enabled: true` / `backend.enabled: true` are set.
-
-### Ingress Not Routing Correctly
-
-Check that the `backend.service.name` in ingress paths matches either "frontend" or "backend".
-
-### Images Not Pulling
-
-Verify:
-1. GitHub Container Registry credentials are configured
-2. Image tags exist in the registry
-3. `imagePullSecrets` is configured correctly
-
-## Best Practices
-
-1. **Environment Variables**: Keep sensitive data in Kubernetes Secrets
-2. **Resource Limits**: Always set resource limits and requests
-3. **Health Checks**: Configure appropriate liveness and readiness probes
-4. **Image Tags**: Use specific version tags in production, not `latest`
-5. **Ingress Paths**: Order paths from most specific to least specific
-
-## Support
-
-For issues or questions, contact the DevOps team or open an issue in the repository.
+See [AIMS-Core Application](../argocd/aims-core-application) for details.

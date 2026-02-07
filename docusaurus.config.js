@@ -8,8 +8,8 @@ import {themes as prismThemes} from 'prism-react-renderer';
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
-  title: 'AIMSGO Platform',
-  tagline: 'Multi-tenant Education Management Platform Documentation',
+  title: 'AIMS Platform',
+  tagline: 'Pan-African School Management — DevOps Documentation',
   favicon: 'img/favicon.ico',
 
   // Set the production url of your site here
@@ -64,9 +64,9 @@ const config = {
       // Replace with your project's social card
       image: 'img/docusaurus-social-card.jpg',
       navbar: {
-        title: 'AIMSGO Platform',
+        title: 'AIMS Platform',
         logo: {
-          alt: 'AIMSGO Logo',
+          alt: 'AIMS Logo',
           src: 'img/logo.svg',
         },
         items: [
@@ -94,12 +94,12 @@ const config = {
                 to: '/docs/deployment/quick-start',
               },
               {
-                label: 'Helm',
-                to: '/docs/helm/overview',
+                label: 'Tenant Management',
+                to: '/docs/tenants/tenant-management',
               },
               {
-                label: 'ArgoCD',
-                to: '/docs/argocd/setup',
+                label: 'Helm Charts',
+                to: '/docs/helm/overview',
               },
             ],
           },
