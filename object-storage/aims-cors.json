@@ -1,0 +1,10 @@
+{
+  "CORSRules": [
+    {
+      "AllowedOrigins": ["https://*.aimsgo.com", "https://aimsgo.com"],
+      "AllowedMethods": ["GET", "HEAD"],
+      "AllowedHeaders": ["*"],
+      "MaxAgeSeconds": 3600
+    }
+  ]
+}
